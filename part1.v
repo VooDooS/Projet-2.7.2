@@ -1,11 +1,14 @@
 Require Import Arith.
+Require Import NPeano.
 
-Inductive kind := k : nat -> kind.
+(** 1.2.1 Types and substitutions *)
+
+Inductive kind := consk : nat -> kind.
 
 Inductive typ :=
   | typ_var : nat -> typ
   | typ_arrow : typ -> typ -> typ
-  | typ_poly : typ -> typ -> typ.
+  | typ_all : kind -> typ -> typ.
 
 Eval compute in if le_gt_dec 3 5 then true else false.
 
@@ -19,7 +22,7 @@ Fixpoint typ_shift (X : nat) (T : typ) : typ :=
                     else
                       typ_var Y
     | typ_arrow T U => typ_arrow (typ_shift X T) (typ_shift X U)
-    | typ_poly T U => typ_poly (typ_shift X T) (typ_shift (X + 1) U)
+    | typ_all k T => typ_all k (typ_shift (X + 1) T)
   end.
 
 Fixpoint tsubst (X : nat) (T2 : typ) (T : typ) : typ := 
@@ -30,14 +33,16 @@ Fixpoint tsubst (X : nat) (T2 : typ) (T : typ) : typ :=
                      | inright _ => typ_var Y
                    end
     | typ_arrow T U => typ_arrow (tsubst X T2 T) (tsubst X T2 U)
-    | typ_poly T U => typ_poly (tsubst X T2 T) (tsubst (X + 1) (typ_shift 0 T2) U)
+    | typ_all k T => typ_all k (tsubst (X + 1) (typ_shift 0 T2) T)
   end.
+
+(** 1.2.2 Terms and substitutions *)
 
 Inductive term :=
   | var : nat -> term
   | lambda : typ -> term -> term
   | app : term -> term -> term
-  | tlambda : typ -> term -> term
+  | tlambda : kind -> term -> term
   | tapp : term -> typ -> term.
 
 Fixpoint term_shift (x : nat) (t : term) : term :=
@@ -48,7 +53,7 @@ Fixpoint term_shift (x : nat) (t : term) : term :=
                  var y
     | lambda T t => lambda T (term_shift (x + 1) t)
     | app t u => app (term_shift x t) (term_shift x u)
-    | tlambda T t => tlambda T (term_shift x t)
+    | tlambda k t => tlambda k (term_shift x t)
     | tapp t T => tapp (term_shift x t) T
   end.
 
@@ -57,7 +62,7 @@ Fixpoint term_shift_typ (X: nat) (t : term) : term :=
     | var y => var y
     | lambda T t => lambda (typ_shift X T) (term_shift_typ X t)
     | app t u => app (term_shift_typ X t) (term_shift_typ X u)
-    | tlambda T t => tlambda (typ_shift X T) (term_shift_typ (X + 1) t)
+    | tlambda k t => tlambda k (term_shift_typ (X + 1) t)
     | tapp t T => tapp (term_shift_typ X t) (typ_shift X T)
   end.
 
@@ -66,7 +71,7 @@ Fixpoint subst_typ (X : nat) (T' : typ) (t : term) : term :=
     | var y => var y
     | lambda T t => lambda (tsubst X T' T) (subst_typ X T' t)
     | app t u => app (subst_typ X T' t) (subst_typ X T' u)
-    | tlambda T t => tlambda (tsubst X T' T) (subst_typ (X + 1) (typ_shift 0 T') t)
+    | tlambda k t => tlambda k (subst_typ (X + 1) (typ_shift 0 T') t)
     | tapp t T => tapp (subst_typ X T' t) (tsubst X T' T)
 end.
 
@@ -83,6 +88,8 @@ Fixpoint subst (x : nat) (t' : term) (t : term) : term :=
   | tlambda T t => tlambda T (subst x (term_shift_typ 0 t') t)
   | tapp t T => tapp (subst x t' t) T
   end.
+
+(** 1.2.3 ENvironments and accessors *)
 
 Inductive env :=
   | empty : env
@@ -118,3 +125,63 @@ Fixpoint get_kind (X : nat) (e : env) : option kind :=
           | S n => get_kind n e
         end
   end.
+
+
+
+
+(** 1.2.4a Well-formedness *)
+Fixpoint wf_typ ( e : env) (T : typ) : Prop :=
+  match T with
+    | typ_var X => get_kind X e = None -> False
+    | typ_arrow T U => wf_typ e T /\ wf_typ e U
+    | typ_all k T =>  wf_typ (consKind k e) T
+  end.
+
+Fixpoint wf_env (e : env) : Prop :=
+  match e with
+    | empty => True
+    | consTyp T e => wf_typ e T /\ wf_env e
+    | consKind k e => wf_env e
+  end.
+
+(** 1.2.4b Kinding *)
+Definition max (n p : nat) := if le_lt_dec n p then p else n. 
+
+Inductive kinding : env -> typ -> kind -> Prop :=
+| K_var :
+  forall (e : env) (X : nat) (k l : nat),
+    wf_env e -> get_kind X e = Some (consk k) -> k <= l -> kinding e (typ_var X) (consk l)
+| K_arrow :
+  forall (e : env) (X Y : nat) (k1 k2 : nat),
+    kinding e (typ_var X) (consk k1) -> kinding e (typ_var Y) (consk k2)
+    -> kinding e (typ_arrow (typ_var X) (typ_var Y)) (consk (max k1 k2))
+| K_all :
+  forall (e : env) (X T : typ) (k1 k2 : nat),
+    kinding (consKind (consk k1) e) T (consk k2) -> kinding e (typ_all (consk k1) T) (consk (max k1 k2))
+.
+
+Inductive typing : env -> term -> typ -> Prop :=
+| T_var : 
+  forall (e : env) (x : nat) (T : typ),
+    wf_env e -> get_typ x e = Some T -> typing e (var x) T
+| T_lambda :
+  forall (e : env) (t : term) (T1 T2 : typ),
+    typing (consTyp T1 e) t T2 -> typing e (lambda T1 t) (typ_arrow T1 T2)
+| T_app :
+  forall (e : env) (t1 t2 : term) (T1 T2 : typ),
+    typing e t1 (typ_arrow T1 T2) -> typing e t2 T1 -> typing e (app t1 t2) T2
+| T_tlambda : 
+  forall (e : env) (k : kind) (t : term) (T : typ),
+    typing (consKind k e) t T -> typing e (tlambda k t) (typ_all k T)
+| T_tapp :
+  forall (e : env) (k :kind) (t : term) (T1 T2 : typ),
+    typing e t (typ_all k T1) -> kinding e T2 k 
+    -> typing e (tapp t T2) (tsubst 0 T2 T1) (* !! *)
+.
+
+
+
+(** 1.2.5a Kind inference *)
+Fixpoint kindIt (e  : env) (T : typ) : option kind :=
+  match T with
+    | typ_var X => 
