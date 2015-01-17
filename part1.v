@@ -1,4 +1,5 @@
 Require Import Arith.
+Require Import Max.
 Require Import NPeano.
 
 (** 1.2.1 Types and substitutions *)
@@ -184,4 +185,14 @@ Inductive typing : env -> term -> typ -> Prop :=
 (** 1.2.5a Kind inference *)
 Fixpoint kindIt (e  : env) (T : typ) : option kind :=
   match T with
-    | typ_var X => 
+      typ_var X => get_kind X e
+    | typ_arrow T U => match kindIt e T, kindIt e U with
+                         | None, _ | _, None => None
+                         | Some (consk k1), Some (consk k2) => Some (consk (max k1 k2))
+                       end
+    | typ_all (consk k) T => match kindIt (consKind (consk k) e) T with
+                               | None => None
+                               | Some (consk k2) => Some (consk (max k k2))
+                             end
+end.
+
