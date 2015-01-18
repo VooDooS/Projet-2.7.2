@@ -1,6 +1,8 @@
 Require Import Arith.
+Require Import Bool.
 Require Import Max.
 Require Import NPeano.
+Require Import Omega.
 
 (** 1.2.1 Types and substitutions *)
 
@@ -145,13 +147,29 @@ Fixpoint wf_env (e : env) : Prop :=
     | consKind k e => wf_env e
   end.
 
+Fixpoint wf_typ_bool ( e : env) (T : typ) : bool :=
+  match T with
+    | typ_var X =>match get_kind X e with
+                    |None => false
+                    |_ => true
+                  end
+    | typ_arrow T U => wf_typ_bool e T && wf_typ_bool e U
+    | typ_all k T =>  wf_typ_bool (consKind k e) T
+  end.
+Fixpoint wf_env_bool (e : env) : bool :=
+  match e with
+    | empty => true
+    | consTyp T e => wf_typ_bool e T && wf_env_bool e
+    | consKind k e => wf_env_bool e
+  end.
+
 (** 1.2.4b Kinding *)
 Definition max (n p : nat) := if le_lt_dec n p then p else n. 
 
 Inductive kinding : env -> typ -> kind -> Prop :=
 | K_var :
   forall (e : env) (X : nat) (k l : nat),
-    wf_env e -> get_kind X e = Some (consk k) -> k <= l -> kinding e (typ_var X) (consk l)
+    wf_env_bool e = true -> get_kind X e = Some (consk k) -> k <= l -> kinding e (typ_var X) (consk l)
 | K_arrow :
   forall (e : env) (X Y : nat) (k1 k2 : nat),
     kinding e (typ_var X) (consk k1) -> kinding e (typ_var Y) (consk k2)
@@ -180,19 +198,72 @@ Inductive typing : env -> term -> typ -> Prop :=
     -> typing e (tapp t T2) (tsubst 0 T2 T1) (* !! *)
 .
 
+(** 1.2.5 *)
+Fixpoint beq_kind (k1 k2 : kind) : bool := 
+  match k1, k2 with
+    | consk n1, consk n2 => beq_nat n1 n2
+  end.
+
+Fixpoint beq_typ (T1 T2 : typ) : bool :=
+  match T1, T2 with
+    | typ_var X, typ_var Y => if beq_nat X Y then true else false
+    | typ_arrow T1 T2, typ_arrow T3 T4 => beq_typ T1 T3 && beq_typ T2 T4
+    | typ_all k1 T1, typ_all k2 T2 => beq_kind k1 k2 && beq_typ T1 T2
+    | _, _ => false
+  end.
 
 
 (** 1.2.5a Kind inference *)
 Fixpoint kindIt (e  : env) (T : typ) : option kind :=
   match T with
-      typ_var X => get_kind X e
+      typ_var X => if wf_env_bool e then
+                     get_kind X e
+                   else None
     | typ_arrow T U => match kindIt e T, kindIt e U with
                          | None, _ | _, None => None
                          | Some (consk k1), Some (consk k2) => Some (consk (max k1 k2))
                        end
     | typ_all (consk k) T => match kindIt (consKind (consk k) e) T with
                                | None => None
-                               | Some (consk k2) => Some (consk (max k k2))
+                               | Some (consk k2) => Some (consk (max k k2 + 1))
                              end
 end.
 
+Fixpoint typIt (e : env) (t : term) : option typ :=
+  match t with
+    | var x => if wf_env_bool e then
+                 get_typ x e
+               else None
+    | lambda T t => match typIt (consTyp T e) t with
+                      | None => None
+                      | Some T2 => Some (typ_arrow T T2)
+                    end
+    | app t u => match typIt e t, typIt e u with
+                     | Some (typ_arrow T1 U), Some T2 => if beq_typ T1 T2 then 
+                                               Some U
+                                             else None
+                     | _, _ => None
+                 end
+    | tlambda k t => match typIt (consKind k e) t with
+                       | None => None
+                       | Some T => Some (typ_all k T)
+                     end
+    | tapp t T => match typIt e t, kindIt e T with
+                    | Some (typ_all k1 T1), Some k2 => if beq_kind k1 k2 then
+                                                         Some (tsubst 0 T T1)
+                                                       else None
+                    | _, _ => None
+                  end
+  end.
+
+
+Lemma ok_kinding : forall (e : env) (T : typ) (k : nat), kindIt e T = Some (consk k) -> kinding e T (consk k).
+Proof.
+intros e T k H.
+induction T.
+simpl in H.
+apply K_var with k.
+remember wf_env_bool as wf.
+injection H.
+
+apply H.
