@@ -171,18 +171,18 @@ Inductive kinding : env -> typ -> kind -> Prop :=
   forall (e : env) (X : nat) (k l : nat),
     wf_env_bool e = true -> get_kind X e = Some (consk k) -> k <= l -> kinding e (typ_var X) (consk l)
 | K_arrow :
-  forall (e : env) (X Y : nat) (k1 k2 : nat),
-    kinding e (typ_var X) (consk k1) -> kinding e (typ_var Y) (consk k2)
-    -> kinding e (typ_arrow (typ_var X) (typ_var Y)) (consk (max k1 k2))
+  forall (e : env) (T1 T2 : typ) (k1 k2 : nat),
+    kinding e T1 (consk k1) -> kinding e T2 (consk k2)
+    -> kinding e (typ_arrow T1 T2) (consk (max k1 k2))
 | K_all :
   forall (e : env) (X T : typ) (k1 k2 : nat),
-    kinding (consKind (consk k1) e) T (consk k2) -> kinding e (typ_all (consk k1) T) (consk (max k1 k2))
+    kinding (consKind (consk k1) e) T (consk k2) -> kinding e (typ_all (consk k1) T) (consk (S (max k1 k2)))
 .
 
 Inductive typing : env -> term -> typ -> Prop :=
 | T_var : 
   forall (e : env) (x : nat) (T : typ),
-    wf_env e -> get_typ x e = Some T -> typing e (var x) T
+    wf_env_bool e = true -> get_typ x e = Some T -> typing e (var x) T
 | T_lambda :
   forall (e : env) (t : term) (T1 T2 : typ),
     typing (consTyp T1 e) t T2 -> typing e (lambda T1 t) (typ_arrow T1 T2)
@@ -199,19 +199,22 @@ Inductive typing : env -> term -> typ -> Prop :=
 .
 
 (** 1.2.5 *)
-Fixpoint beq_kind (k1 k2 : kind) : bool := 
-  match k1, k2 with
-    | consk n1, consk n2 => beq_nat n1 n2
-  end.
+Lemma eq_kind : forall (k1 k2 : kind), {k1 = k2} + {k1 <> k2}.
+Proof.
+  intros k1 k2.
+  remember k1 as opt1.
+  destruct opt1 as [n1].
+  remember k2 as opt2.
+  destruct opt2 as [n2].
+  decide equality.
+  apply eq_nat_dec.
+Qed.
 
-Fixpoint beq_typ (T1 T2 : typ) : bool :=
-  match T1, T2 with
-    | typ_var X, typ_var Y => if beq_nat X Y then true else false
-    | typ_arrow T1 T2, typ_arrow T3 T4 => beq_typ T1 T3 && beq_typ T2 T4
-    | typ_all k1 T1, typ_all k2 T2 => beq_kind k1 k2 && beq_typ T1 T2
-    | _, _ => false
-  end.
-
+Lemma eq_typ : forall (T1 T2 : typ), {T1 = T2} + {T1 <> T2}.
+Proof.
+  decide equality; decide equality.
+  apply eq_nat_dec.
+Qed.
 
 (** 1.2.5a Kind inference *)
 Fixpoint kindIt (e  : env) (T : typ) : option kind :=
@@ -225,7 +228,7 @@ Fixpoint kindIt (e  : env) (T : typ) : option kind :=
                        end
     | typ_all (consk k) T => match kindIt (consKind (consk k) e) T with
                                | None => None
-                               | Some (consk k2) => Some (consk (max k k2 + 1))
+                               | Some (consk k2) => Some (consk ( S(max k k2)))
                              end
 end.
 
@@ -239,7 +242,7 @@ Fixpoint typIt (e : env) (t : term) : option typ :=
                       | Some T2 => Some (typ_arrow T T2)
                     end
     | app t u => match typIt e t, typIt e u with
-                     | Some (typ_arrow T1 U), Some T2 => if beq_typ T1 T2 then 
+                     | Some (typ_arrow T1 U), Some T2 => if eq_typ T1 T2 then 
                                                Some U
                                              else None
                      | _, _ => None
@@ -249,7 +252,7 @@ Fixpoint typIt (e : env) (t : term) : option typ :=
                        | Some T => Some (typ_all k T)
                      end
     | tapp t T => match typIt e t, kindIt e T with
-                    | Some (typ_all k1 T1), Some k2 => if beq_kind k1 k2 then
+                    | Some (typ_all k1 T1), Some k2 => if eq_kind k1 k2 then
                                                          Some (tsubst 0 T T1)
                                                        else None
                     | _, _ => None
@@ -257,13 +260,137 @@ Fixpoint typIt (e : env) (t : term) : option typ :=
   end.
 
 
-Lemma ok_kinding : forall (e : env) (T : typ) (k : nat), kindIt e T = Some (consk k) -> kinding e T (consk k).
+Lemma ok_kinding : forall (T : typ) (e : env) (k : nat), kindIt e T = Some (consk k) -> kinding e T (consk k).
 Proof.
-intros e T k H.
 induction T.
+intros e k H.
+
 simpl in H.
 apply K_var with k.
-remember wf_env_bool as wf.
-injection H.
+destruct (wf_env_bool e).
+reflexivity.
+discriminate H.
+destruct (wf_env_bool  e).
+assumption.
+discriminate H.
+trivial.
 
-apply H.
+intros e k H.
+simpl in H.
+remember (kindIt e T1) as opt1. destruct opt1.
+remember (kindIt e T2) as opt2. destruct opt2.
+destruct k0. destruct k1.
+inversion H.
+apply K_arrow.
+apply IHT1. symmetry. assumption.
+apply IHT2. symmetry. assumption.
+
+destruct k0.
+discriminate H.
+
+discriminate H.
+
+
+
+intros e k0 H.
+simpl in H.
+destruct k.
+remember (kindIt (consKind (consk n) e) T) as opt. destruct opt.
+destruct k.
+inversion H.
+apply K_all.
+trivial.
+apply IHT.
+rewrite Heqopt.
+reflexivity.
+
+discriminate H.
+Qed.
+
+Lemma ok_typing : forall (t : term) (e : env) (T : typ), typIt e t = Some T -> typing e t T.
+Proof.
+induction t.
+
+  intros e T H.
+  apply T_var.
+  simpl in H.
+  destruct (wf_env_bool e).
+    reflexivity.
+
+    discriminate H.
+  simpl in H.
+  
+  destruct (wf_env_bool e).
+    assumption.
+
+    discriminate H.
+
+
+  intros e T H.
+  simpl in H.
+  remember (typIt (consTyp t e) t0) as opt.
+  destruct opt.
+    inversion H.
+    apply T_lambda.
+    apply IHt. symmetry. assumption.
+
+    discriminate H.
+
+
+  intros e T H.  
+    simpl in H.
+    remember (typIt e t1) as opt.
+    destruct opt.
+      destruct t.
+        discriminate H.
+        
+        remember (typIt e t2) as opt2.
+        destruct opt2.
+          remember (eq_typ t3 t) as opt3. destruct opt3.
+            inversion H.
+            apply T_app with t3.
+            apply IHt1. symmetry. rewrite <- H1. assumption.
+            apply IHt2. symmetry in Heqopt2. rewrite e0. assumption.
+
+            discriminate H.
+
+          discriminate H.
+        
+        discriminate H.
+
+      discriminate H.
+
+  
+  intros e T H.
+  simpl in H.
+  remember (typIt (consKind k e) t) as opt1. destruct opt1.
+    inversion H.  
+    apply T_tlambda.
+    apply IHt. symmetry. assumption.
+
+    discriminate H.
+  
+
+  intros e T H.
+  simpl in H.
+  remember (typIt e t) as opt. destruct opt.
+    destruct t1.
+      discriminate H.
+    
+      discriminate H.
+      
+      remember (kindIt e t0) as opt2. destruct opt2.
+        remember (eq_kind k k0) as opt3. destruct opt3.
+          inversion H.
+          apply T_tapp with k.
+          apply IHt. symmetry. assumption.
+          
+          destruct k. apply ok_kinding.
+          rewrite e0. symmetry. assumption.
+
+        discriminate H.
+      
+      discriminate H.
+      
+     discriminate H.
+Qed.
