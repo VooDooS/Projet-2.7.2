@@ -164,7 +164,7 @@ Fixpoint wf_env_bool (e : env) : bool :=
   end.
 
 (** 1.2.4b Kinding *)
-Definition max (n p : nat) := if le_lt_dec n p then p else n. 
+(* Definition max (n p : nat) := if le_lt_dec n p then p else n. *)
 
 Inductive kinding : env -> typ -> kind -> Prop :=
 | K_var :
@@ -393,4 +393,47 @@ induction t.
       discriminate H.
       
      discriminate H.
+Qed.
+
+Lemma cumulativity : forall (T : typ) (e : env) (k1 k2 : nat), kinding e T (consk k1) -> k1 <= k2 -> kinding e T (consk k2).
+Proof.
+induction T.
+- intros k1 k2 H H0 H1.
+  inversion H0.
+  eapply K_var.
+  + assumption.  
+  + eassumption. 
+  + omega.
+- intros e k1 k2 H H0.
+  inversion H; subst.
+  replace k2 with (max k2 k2).
+  + apply K_arrow.
+    * apply IHT1 with k0.
+      assumption.
+      apply max_lub_l in H0.
+      assumption.
+    * apply IHT2 with k3.
+      assumption.
+      apply max_lub_r in H0.
+      assumption.
+  +  now apply max_idempotent.
+
+
+- intros e k1 k2 H H0.
+  inversion H; subst.
+  destruct k2.
+  + now inversion H0.
+  + apply le_S_n in H0.
+    replace k2 with (max k0 k2).
+    * apply K_all.
+      now trivial.
+      apply (IHT _ k3 k2).
+      assumption.
+      apply max_lub_r in H0.
+      assumption.
+    * apply max_lub_l in H0.
+      apply max_l in H0.
+      replace (max k0 k2) with (max k2 k0).
+      assumption.
+      now apply max_comm.
 Qed.
