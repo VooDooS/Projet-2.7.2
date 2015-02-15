@@ -5,7 +5,6 @@ Require Import NPeano.
 Require Import Omega.
 
 (** 1.2.1 Types and substitutions *)
-
 Inductive kind := consk : nat -> kind.
 
 Inductive typ :=
@@ -388,3 +387,41 @@ induction T.
       assumption.
       now apply max_comm.
 Qed.
+
+(** 1.3.1.1 insert_kind : nat -> env -> env -> Prop *)
+Inductive insert_kind : nat -> env -> env -> Prop :=
+  Now : forall (k : kind) (e : env), insert_kind 0 e (consKind k e)
+| AfterTyp : forall (X : nat) (k : kind) (e e' : env) (T : typ),
+                insert_kind (S X) (consTyp T e) (consTyp (typ_shift X T) e')
+| AfterKind : forall (X : nat) (k :kind) (e e' : env),
+                 insert_kind (S X) (consKind k e) (consKind k e').
+
+(** 1.3.1.2 Invariants *)
+Lemma typ_subst_wf_type : forall (X : nat) (T : typ) (e : env),
+          wf_typ e T -> wf_env e -> wf_typ e (typ_shift X T).
+Proof.
+  intros X T e H H0.
+  destruct (typ_shift X T).
+  - simpl.
+    intro.
+    destruct T.
+    + simpl in H. apply H.
+      admit.
+    + admit.
+    + admit.
+  - admit.
+  - admit.
+Qed.
+
+
+
+Lemma insert_kind_wf_env : forall (X : nat) (e e' : env),
+                             wf_env e -> insert_kind X e e' -> wf_env e'.
+Proof.
+  intros X e e' H H0.
+  induction e.
+  - destruct H0.
+    + now simpl.
+    + simpl. split.
+      * simpl in H. case H.
+        apply typ_subst_wf_type.
