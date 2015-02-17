@@ -20,22 +20,22 @@ typ_shift (X:nat) (T:typ) : typ increments by one every var greater than X in T.
 Fixpoint typ_shift (X : nat) (T : typ) : typ := 
   match T with
     | typ_var Y  => if le_gt_dec X Y then 
-                      typ_var (Y + 1)
+                      typ_var (S Y)
                     else
                       typ_var Y
     | typ_arrow T U => typ_arrow (typ_shift X T) (typ_shift X U)
-    | typ_all k T => typ_all k (typ_shift (X + 1) T)
+    | typ_all k T => typ_all k (typ_shift (S X) T)
   end.
 
 Fixpoint tsubst (X : nat) (T2 : typ) (T : typ) : typ := 
   match T with
     | typ_var Y => match lt_eq_lt_dec X Y with
-                     | inleft (left _) => typ_var (Y -1)
-                     | inleft (right _) => T2
-                     | inright _ => typ_var Y
-                   end
+                         | inleft (left _) => typ_var (Y - 1)
+                         | inleft (right _) => T2
+                         | inright _ => typ_var Y
+                       end
     | typ_arrow T U => typ_arrow (tsubst X T2 T) (tsubst X T2 U)
-    | typ_all k T => typ_all k (tsubst (X + 1) (typ_shift 0 T2) T)
+    | typ_all k T => typ_all k (tsubst (S X) (typ_shift 0 T2) T)
   end.
 
 (** 1.2.2 Terms and substitutions *)
@@ -50,10 +50,10 @@ Inductive term :=
 Fixpoint term_shift (x : nat) (t : term) : term :=
   match t with
     | var y => if le_gt_dec x y then
-                 var (y + 1)
+                 var (S y)
                else
                  var y
-    | lambda T t => lambda T (term_shift (x + 1) t)
+    | lambda T t => lambda T (term_shift (S x) t)
     | app t u => app (term_shift x t) (term_shift x u)
     | tlambda k t => tlambda k (term_shift x t)
     | tapp t T => tapp (term_shift x t) T
@@ -64,7 +64,7 @@ Fixpoint term_shift_typ (X: nat) (t : term) : term :=
     | var y => var y
     | lambda T t => lambda (typ_shift X T) (term_shift_typ X t)
     | app t u => app (term_shift_typ X t) (term_shift_typ X u)
-    | tlambda k t => tlambda k (term_shift_typ (X + 1) t)
+    | tlambda k t => tlambda k (term_shift_typ (S X) t)
     | tapp t T => tapp (term_shift_typ X t) (typ_shift X T)
   end.
 
@@ -73,7 +73,7 @@ Fixpoint subst_typ (X : nat) (T' : typ) (t : term) : term :=
     | var y => var y
     | lambda T t => lambda (tsubst X T' T) (subst_typ X T' t)
     | app t u => app (subst_typ X T' t) (subst_typ X T' u)
-    | tlambda k t => tlambda k (subst_typ (X + 1) (typ_shift 0 T') t)
+    | tlambda k t => tlambda k (subst_typ (S X) (typ_shift 0 T') t)
     | tapp t T => tapp (subst_typ X T' t) (tsubst X T' T)
 end.
 
@@ -85,7 +85,7 @@ Fixpoint subst (x : nat) (t' : term) (t : term) : term :=
       | inleft (right _) => t'
       | inright _        => var (y - 1)
       end
-  | lambda T t  => lambda T (subst (x + 1) (term_shift 0 t') t)
+  | lambda T t  => lambda T (subst (S x) (term_shift 0 t') t)
   | app t u  => app (subst x t' t) (subst x t' u)
   | tlambda T t => tlambda T (subst x (term_shift_typ 0 t') t)
   | tapp t T => tapp (subst x t' t) T
@@ -398,13 +398,31 @@ Inductive insert_kind : nat -> env -> env -> Prop :=
 
 (** 1.3.1.2 Invariants *)
 Lemma typ_subst_wf_type : forall (X : nat) (T : typ) (e e' : env),
-          wf_typ e T -> wf_env e -> insert_kind X e e' -> wf_typ e' (typ_shift X T).
+          wf_typ e T -> insert_kind X e e' -> wf_typ e' (typ_shift X T).
 Proof.
-  intros X T e e' H H0 H1.
-  induction H1.
-  - destruct T.
-    + simpl. intros H1.
- Qed.
+  intros X T.
+  revert X.
+  induction T.
+  intros X e e' H H0.
+  - simpl.
+    destruct (le_gt_dec X n).
+    + simpl in H.
+      induction H0; simpl.
+      * assumption.
+      * simpl in H.
+
+
+
+      induction H1.
+  - induction T; simpl; simpl in H.
+    + assumption.
+    + case H. split.
+      * now apply IHT1.
+      * now apply IHT2.
+    + simpl.
+  
+
+Qed.
 
 
 
