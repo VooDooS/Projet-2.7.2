@@ -19,7 +19,7 @@ typ_shift (X:nat) (T:typ) : typ increments by one every var greater than X in T.
 
 Fixpoint typ_shift (X : nat) (T : typ) : typ := 
   match T with
-    | typ_var Y  => if le_gt_dec X Y then 
+    | typ_var Y  => if leb X Y then 
                       typ_var (S Y)
                     else
                       typ_var Y
@@ -29,10 +29,10 @@ Fixpoint typ_shift (X : nat) (T : typ) : typ :=
 
 Fixpoint tsubst (X : nat) (T2 : typ) (T : typ) : typ := 
   match T with
-    | typ_var Y => match lt_eq_lt_dec X Y with
-                         | inleft (left _) => typ_var (Y - 1)
-                         | inleft (right _) => T2
-                         | inright _ => typ_var Y
+    | typ_var Y => match nat_compare X Y with
+                         | Lt => typ_var (Y - 1)
+                         | Eq => T2
+                         | Gt => typ_var Y
                        end
     | typ_arrow T U => typ_arrow (tsubst X T2 T) (tsubst X T2 U)
     | typ_all k T => typ_all k (tsubst (S X) (typ_shift 0 T2) T)
@@ -49,14 +49,14 @@ Inductive term :=
 
 Fixpoint term_shift (x : nat) (t : term) : term :=
   match t with
-    | var y => if le_gt_dec x y then
+    | var y => if leb x y then
                  var (S y)
                else
                  var y
-    | lambda T t => lambda T (term_shift (S x) t)
+    | lambda T t => lambda (typ_shift x T) (term_shift (S x) t)
     | app t u => app (term_shift x t) (term_shift x u)
-    | tlambda k t => tlambda k (term_shift x t)
-    | tapp t T => tapp (term_shift x t) T
+    | tlambda k t => tlambda k (term_shift (S x) t)
+    | tapp t T => tapp (term_shift x t) (typ_shift x T)
   end.
 
 Fixpoint term_shift_typ (X: nat) (t : term) : term :=
@@ -400,13 +400,23 @@ Inductive insert_kind : nat -> env -> env -> Prop :=
 Lemma typ_subst_wf_type : forall (X : nat) (T : typ) (e e' : env),
           wf_typ e T -> insert_kind X e e' -> wf_typ e' (typ_shift X T).
 Proof.
-  intros X T.
-  revert X.
+  intros X T e e' H0 H1.
+  induction H1.
   induction T.
+simpl. simpl in H0. assumption.
+simpl. split;
+simpl in H0; destruct H0.
+now apply IHT1. 
+now apply IHT2.
+simpl in H0.
+
+
+
+induction T.
   intros X e e' H H0.
   - simpl.
-    destruct (le_gt_dec X n).
-    + simpl in H.
+    destruct (X <=? n).
+    + simpl in H. simpl.
       induction H0; simpl.
       * assumption.
       * simpl in H.
